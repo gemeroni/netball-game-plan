@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a3a5c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Kiwales Game Board</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    :root {
+      --navy: #1a3a5c;
+      --navy-dark: #112840;
+      --gold: #c8a020;
+      --bg: #f0f4f8;
+      --surface: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --radius: 12px;
+
+      --gs:  #dc2626; --gs-bg:  #fef2f2;
+      --ga:  #ea580c; --ga-bg:  #fff7ed;
+      --wa:  #b45309; --wa-bg:  #fffbeb;
+      --c:   #16a34a; --c-bg:   #f0fdf4;
+      --wd:  #0d9488; --wd-bg:  #f0fdfa;
+      --gd:  #0284c7; --gd-bg:  #e0f2fe;
+      --gk:  #7c3aed; --gk-bg:  #f5f3ff;
+      --sub: #4b5563; --sub-bg: #f9fafb;
+    }
+
+    html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: var(--text); overflow: hidden; }
+
+    /* ── Setup Screen ───────────────────────────────────────── */
+    #setup {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100svh;
+      padding: 24px;
+      background: var(--navy);
+    }
+    #setup.active { display: flex; }
+
+    .setup-brand { color: var(--gold); font-size: 26px; font-weight: 900; letter-spacing: -0.5px; }
+    .setup-sub   { color: rgba(255,255,255,0.5); font-size: 13px; margin-bottom: 36px; }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 420px;
+    }
+    .card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: var(--navy); }
+    .card p  { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 6px; }
+    .card a  { color: var(--navy); font-weight: 600; }
+    .card code { font-size: 12px; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+    .field-group { margin-top: 20px; }
+    .field-group label { display: block; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+    .field-group input {
+      width: 100%; padding: 12px 14px;
+      border: 2px solid var(--border); border-radius: 8px;
+      font-size: 14px; font-family: monospace;
+      transition: border-color 0.15s;
+    }
+    .field-group input:focus { outline: none; border-color: var(--navy); }
+
+    .btn { display: block; width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; transition: opacity 0.15s; margin-top: 16px; }
+    .btn:active { opacity: 0.8; }
+    .btn-primary { background: var(--navy); color: white; }
+    .btn-danger  { background: #fee2e2; color: #dc2626; }
+
+    #setup-error { color: #dc2626; font-size: 13px; margin-top: 10px; min-height: 18px; }
+
+    /* ── App Shell ──────────────────────────────────────────── */
+    #app {
+      display: none;
+      flex-direction: column;
+      height: 100svh;
+    }
+    #app.active { display: flex; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .header {
+      background: var(--navy);
+      padding: 12px 16px 10px;
+      flex-shrink: 0;
+    }
+    .header-row1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .brand { color: var(--gold); font-size: 17px; font-weight: 900; letter-spacing: -0.3px; }
+    .settings-btn {
+      background: rgba(255,255,255,0.12);
+      border: none; color: white;
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      font-size: 16px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .round-row { display: flex; align-items: center; gap: 10px; }
+    .round-select {
+      flex: 1;
+      padding: 9px 34px 9px 12px;
+      background: rgba(255,255,255,0.13);
+      border: 1.5px solid rgba(255,255,255,0.22);
+      border-radius: 9px;
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      -webkit-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.6)'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      cursor: pointer;
+    }
+    .round-select option { background: var(--navy-dark); }
+
+    .round-meta {
+      font-size: 12px;
+      color: rgba(255,255,255,0.55);
+      margin-top: 5px;
+      min-height: 15px;
+    }
+
+    /* ── Grid ───────────────────────────────────────────────── */
+    .grid-wrap {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 12px 12px 24px;
+    }
+
+    .grid {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: var(--surface);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+    }
+
+    .grid thead th {
+      background: var(--navy);
+      color: rgba(255,255,255,0.85);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 10px 6px;
+      text-align: center;
+    }
+    .grid thead th:first-child { text-align: left; padding-left: 14px; width: 30%; }
+
+    .grid tbody tr { border-bottom: 1px solid var(--border); }
+    .grid tbody tr:last-child { border-bottom: none; }
+    .grid tbody tr.is-absent { background: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(0,0,0,0.018) 6px, rgba(0,0,0,0.018) 12px); }
+
+    .grid tbody td {
+      padding: 9px 5px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .grid tbody td.td-name {
+      padding: 9px 10px 9px 14px;
+      text-align: left;
+    }
+
+    .player-name-btn {
+      background: none;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .is-absent .player-name-btn { color: var(--muted); }
+
+    .out-badge {
+      font-size: 10px;
+      font-weight: 800;
+      background: #fee2e2;
+      color: #dc2626;
+      border-radius: 4px;
+      padding: 1px 5px;
+      letter-spacing: 0.03em;
+    }
+    .note-dot {
+      width: 6px; height: 6px;
+      background: var(--gold);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Position pill */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 46px;
+      height: 38px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      border: 2px solid;
+      transition: transform 0.1s;
+      user-select: none;
+      letter-spacing: 0.02em;
+    }
+    .pill:active { transform: scale(0.91); }
+
+    .empty-cell {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 46px;
+      height: 38px;
+      border-radius: 8px;
+      border: 2px dashed var(--border);
+      color: #d1d5db;
+      font-size: 18px;
+      cursor: pointer;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .empty-cell:active { border-color: var(--navy); color: var(--navy); }
+
+    .pos-GS  { background: var(--gs-bg);  color: var(--gs);  border-color: var(--gs);  }
+    .pos-GA  { background: var(--ga-bg);  color: var(--ga);  border-color: var(--ga);  }
+    .pos-WA  { background: var(--wa-bg);  color: var(--wa);  border-color: var(--wa);  }
+    .pos-C   { background: var(--c-bg);   color: var(--c);   border-color: var(--c);   }
+    .pos-WD  { background: var(--wd-bg);  color: var(--wd);  border-color: var(--wd);  }
+    .pos-GD  { background: var(--gd-bg);  color: var(--gd);  border-color: var(--gd);  }
+    .pos-GK  { background: var(--gk-bg);  color: var(--gk);  border-color: var(--gk);  }
+    .pos-Sub { background: var(--sub-bg); color: var(--sub); border-color: var(--sub); }
+
+    /* Saving shimmer */
+    .saving .pill, .saving .empty-cell { opacity: 0.45; pointer-events: none; }
+
+    /* ── Spinner ─────────────────────────────────────────────── */
+    .loading-cell { text-align: center; padding: 48px 0; color: var(--muted); font-size: 14px; }
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--navy);
+      border-radius: 50%;
+      animation: spin 0.65s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Bottom Sheet ────────────────────────────────────────── */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 50;
+      align-items: flex-end;
+      backdrop-filter: blur(2px);
+      -webkit-backdrop-filter: blur(2px);
+    }
+    .overlay.active { display: flex; }
+
+    .sheet {
+      width: 100%;
+      background: white;
+      border-radius: 22px 22px 0 0;
+      padding: 0 16px max(env(safe-area-inset-bottom), 24px);
+      animation: slideUp 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+    @keyframes slideUp { from { transform: translateY(110%); } to { transform: translateY(0); } }
+
+    .sheet-handle { width: 38px; height: 4px; background: #e5e7eb; border-radius: 2px; margin: 12px auto 0; }
+    .sheet-player { font-size: 18px; font-weight: 800; text-align: center; margin: 14px 0 2px; color: var(--navy); }
+    .sheet-quarter { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 16px; }
+
+    /* Position picker grid: 4 across */
+    .pos-picker {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+      margin-bottom: 10px;
+    }
+    .pos-opt {
+      padding: 15px 6px;
+      border: 2px solid;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 800;
+      cursor: pointer;
+      text-align: center;
+      transition: transform 0.1s, box-shadow 0.1s;
+      letter-spacing: 0.02em;
+    }
+    .pos-opt:active { transform: scale(0.94); }
+    .pos-opt.is-current {
+      box-shadow: 0 0 0 3px var(--navy);
+    }
+    .pos-opt-GS  { background: var(--gs-bg);  color: var(--gs);  border-color: var(--gs);  }
+    .pos-opt-GA  { background: var(--ga-bg);  color: var(--ga);  border-color: var(--ga);  }
+    .pos-opt-WA  { background: var(--wa-bg);  color: var(--wa);  border-color: var(--wa);  }
+    .pos-opt-C   { background: var(--c-bg);   color: var(--c);   border-color: var(--c);   }
+    .pos-opt-WD  { background: var(--wd-bg);  color: var(--wd);  border-color: var(--wd);  }
+    .pos-opt-GD  { background: var(--gd-bg);  color: var(--gd);  border-color: var(--gd);  }
+    .pos-opt-GK  { background: var(--gk-bg);  color: var(--gk);  border-color: var(--gk);  }
+    .pos-opt-Sub { background: var(--sub-bg); color: var(--sub); border-color: var(--sub); }
+
+    .btn-clear-pos {
+      width: 100%; padding: 13px;
+      background: var(--bg); border: none; border-radius: 10px;
+      color: var(--muted); font-size: 14px; font-weight: 600;
+      cursor: pointer; margin-bottom: 6px;
+    }
+
+    /* Player sheet (absent toggle) */
+    .player-actions { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+    .action-btn {
+      padding: 14px 16px;
+      border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; text-align: left;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .action-btn .icon { font-size: 18px; }
+    .action-absent    { background: #fee2e2; color: #dc2626; }
+    .action-present   { background: #dcfce7; color: #16a34a; }
+    .action-cleargame { background: var(--bg); color: var(--muted); }
+
+    .notes-area {
+      width: 100%; min-height: 70px;
+      padding: 12px; border: 2px solid var(--border); border-radius: 10px;
+      font-size: 14px; font-family: inherit; resize: none;
+      margin-bottom: 10px;
+    }
+    .notes-area:focus { outline: none; border-color: var(--navy); }
+    .notes-label { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; display: block; }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 90px; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: #1f2937; color: white;
+      padding: 9px 20px; border-radius: 100px;
+      font-size: 13px; font-weight: 600;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.18s, transform 0.18s;
+      z-index: 200; white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err  { background: #dc2626; }
+  </style>
+</head>
+<body>
+
+<!-- ── Setup ─────────────────────────────────────────────────── -->
+<div id="setup">
+  <div class="setup-brand">Kiwales NC</div>
+  <div class="setup-sub">Game Board</div>
+  <div class="card">
+    <h2>Connect to Airtable</h2>
+    <p>Create a Personal Access Token at <a href="https://airtable.com/create/tokens" target="_blank">airtable.com/create/tokens</a></p>
+    <p style="margin-top:6px">Scopes needed: <code>data.records:read</code> and <code>data.records:write</code> for the <strong>Kiwales Emerald 2026</strong> base.</p>
+    <div class="field-group">
+      <label>Personal Access Token</label>
+      <input type="password" id="token-input" placeholder="patXXXXXXXXXXXXXX.XXXX..."
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+    <button class="btn btn-primary" onclick="saveToken()">Connect</button>
+    <div id="setup-error"></div>
+  </div>
+</div>
+
+<!-- ── App ───────────────────────────────────────────────────── -->
+<div id="app">
+  <div class="header">
+    <div class="header-row1">
+      <div class="brand">Kiwales Game Board</div>
+      <button class="settings-btn" onclick="showDisconnect()" title="Settings">⚙</button>
+    </div>
+    <div class="round-row">
+      <select class="round-select" id="round-select" onchange="onRoundChange(this.value)">
+        <option>Loading...</option>
+      </select>
+    </div>
+    <div class="round-meta" id="round-meta"></div>
+  </div>
+
+  <div class="grid-wrap">
+    <table class="grid" id="grid">
+      <thead>
+        <tr>
+          <th>Player</th>
+          <th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th>
+        </tr>
+      </thead>
+      <tbody id="grid-body">
+        <tr><td colspan="5" class="loading-cell"><div class="spinner"></div>Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Bottom Sheet (position picker) ────────────────────────── -->
+<div class="overlay" id="pos-overlay" onclick="closePosSheet(event)">
+  <div class="sheet" id="pos-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-player" id="ps-player"></div>
+    <div class="sheet-quarter" id="ps-quarter"></div>
+    <div class="pos-picker" id="ps-picker"></div>
+    <button class="btn-clear-pos" onclick="savePosition(null)">Clear</button>
+  </div>
+</div>
+
+<!-- ── Bottom Sheet (player options) ─────────────────────────── -->
+<div class="overlay" id="plr-overlay" onclick="closePlrSheet(event)">
+  <div class="sheet" id="plr-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-player" id="pl-name"></div>
+    <div class="sheet-quarter" style="margin-bottom:14px" id="pl-note-label"></div>
+    <textarea class="notes-area" id="pl-notes" placeholder="e.g. ankle - limit to sub, or coach override reason"
+      onchange="saveNotes(this.value)"></textarea>
+    <div class="player-actions" id="pl-actions"></div>
+    <button class="btn-clear-pos" onclick="closePlrSheet()">Done</button>
+  </div>
+</div>
+
+<!-- ── Toast ─────────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────
+const BASE      = 'appFYVGJzbhxXJ1Gk';
+const G_TABLE   = 'tblSpvItnauxk44vM';
+const S_TABLE   = 'tblThMzxc1CfRrB7U';
+const API       = `https://api.airtable.com/v0/${BASE}`;
+
+const F = {
+  playerRound : 'fldJ8iosCsMqDvS64',
+  player      : 'fldFLYdtgwR6Icz3T',
+  q1          : 'fldkGTJhixnVncuu2',
+  q2          : 'fldHMDnk96axMIFp5',
+  q3          : 'fldCwYv2bW7D9W4Uc',
+  q4          : 'fldhhR5U2QeXAwdsO',
+  absent      : 'fld6RUTGJJmLKCSVd',
+  notes       : 'fld3JxHX6Vl7dcNW8',
+  round       : 'fldWbZwJLf4rK0XkQ',
+  opponent    : 'fldFd6ywxv9sMrXjm',
+  gameDate    : 'fldJUJyzT1omvidO9',
+};
+
+const SF = {
+  event    : 'fldSjBwSQseOdoOGZ',
+  rivals   : 'fldp59qRyPTDzTCo0',
+  dateTime : 'fldc6i7CaO7BNP5S9',
+  type     : 'flde7M82OXbgMr2zw',
+};
+
+const QF = { Q1: F.q1, Q2: F.q2, Q3: F.q3, Q4: F.q4 };
+const POSITIONS = ['GK','GD','WD','C','WA','GA','GS','Sub'];
+
+// ─── State ─────────────────────────────────────────────────────
+let token       = null;
+let allRecords  = [];
+let scheduleMap = {};   // "Round 02" -> { rival, date }
+let roundGroups = {};
+let activeRound = null;
+let editRec     = null;
+let editQ       = null;
+let plrRec      = null;
+
+// ─── Auth ───────────────────────────────────────────────────────
+function saveToken() {
+  const val = document.getElementById('token-input').value.trim();
+  if (!val.startsWith('pat')) {
+    document.getElementById('setup-error').textContent = 'Token should start with "pat..."';
+    return;
+  }
+  localStorage.setItem('kw_token', val);
+  token = val;
+  document.getElementById('setup-error').textContent = '';
+  showApp();
+  loadAll();
+}
+
+function showDisconnect() {
+  if (confirm('Disconnect from Airtable?\n\nYou will need to re-enter your token next time.')) {
+    localStorage.removeItem('kw_token');
+    location.reload();
+  }
+}
+
+// ─── API ────────────────────────────────────────────────────────
+async function apiFetch(table, path = '', opts = {}) {
+  const res = await fetch(`${API}/${table}${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`${res.status}: ${body}`);
+  }
+  return res.json();
+}
+
+function qp(fields) {
+  // Build ?fields[]=fld1&fields[]=fld2 style query string
+  return fields.map(f => `fields[]=${encodeURIComponent(f)}`).join('&');
+}
+
+async function fetchAllPages(table, fields) {
+  let records = [], offset = null;
+  do {
+    let url = `?${qp(fields)}&pageSize=100`;
+    if (offset) url += `&offset=${offset}`;
+    const data = await apiFetch(table, url);
+    records = records.concat(data.records);
+    offset = data.offset || null;
+  } while (offset);
+  return records;
+}
+
+// ─── Load ───────────────────────────────────────────────────────
+async function loadAll() {
+  setLoading(true);
+  try {
+    const [games, sched] = await Promise.all([
+      fetchAllPages(G_TABLE, Object.values(F)),
+      fetchAllPages(S_TABLE, [SF.event, SF.rivals, SF.dateTime]),
+    ]);
+
+    // Build schedule map: "Round 02" -> {rival, date}
+    scheduleMap = {};
+    for (const s of sched) {
+      const name = s.fields[SF.event] || '';
+      // Event is e.g. "Round 02 - Game" - extract round part
+      const m = name.match(/Round\s+\d+/i);
+      if (!m) continue;
+      const key = m[0]; // "Round 02"
+      scheduleMap[key] = {
+        rival : s.fields[SF.rivals]?.name || '',
+        date  : s.fields[SF.dateTime] || '',
+      };
+    }
+
+    allRecords = games;
+    buildGroups();
+    populateSelector();
+    autoSelectRound();
+  } catch (e) {
+    setLoading(false);
+    toast('Could not load data. Check your token.', true);
+    console.error(e);
+  }
+}
+
+function buildGroups() {
+  roundGroups = {};
+  for (const rec of allRecords) {
+    const links = rec.fields[F.round];
+    if (!links?.length) continue;
+    const roundName = links[0].name; // "Round 02"
+    if (!roundGroups[roundName]) roundGroups[roundName] = [];
+    roundGroups[roundName].push(rec);
+  }
+}
+
+function populateSelector() {
+  const sel = document.getElementById('round-select');
+  const keys = Object.keys(roundGroups).sort((a, b) => roundNum(a) - roundNum(b));
+  sel.innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+}
+
+function roundNum(name) {
+  return parseInt(name.replace(/\D+/g, '')) || 0;
+}
+
+function autoSelectRound() {
+  const today = new Date();
+  const keys  = Object.keys(roundGroups).sort((a, b) => roundNum(a) - roundNum(b));
+  if (!keys.length) return;
+
+  // Find nearest upcoming round by schedule date
+  let chosen = keys[keys.length - 1]; // default: last round
+  for (const k of keys) {
+    const info = scheduleMap[k];
+    if (info?.date) {
+      const d = new Date(info.date);
+      if (d >= today) { chosen = k; break; }
+    }
+  }
+
+  document.getElementById('round-select').value = chosen;
+  onRoundChange(chosen);
+}
+
+function onRoundChange(roundName) {
+  activeRound = roundName;
+  const info = scheduleMap[roundName] || {};
+  const parts = [];
+  if (info.rival) parts.push(`vs ${info.rival}`);
+  if (info.date)  parts.push(fmtDate(info.date));
+  document.getElementById('round-meta').textContent = parts.join(' · ');
+  renderGrid(roundGroups[roundName] || []);
+}
+
+// ─── Grid ───────────────────────────────────────────────────────
+function setLoading(on) {
+  if (on) {
+    document.getElementById('grid-body').innerHTML =
+      `<tr><td colspan="5" class="loading-cell"><div class="spinner"></div>Loading...</td></tr>`;
+  }
+}
+
+function playerLabel(rec) {
+  const raw = rec.fields[F.playerRound] || '';
+  const parts = raw.split(' - ');
+  return parts.slice(1).join(' ') || raw;
+}
+
+function renderGrid(records) {
+  const tbody = document.getElementById('grid-body');
+  if (!records.length) {
+    tbody.innerHTML = `<tr><td colspan="5" class="loading-cell" style="color:var(--muted)">No records for this round</td></tr>`;
+    return;
+  }
+
+  // Sort: present first (alpha), absent last (alpha)
+  const sorted = [...records].sort((a, b) => {
+    const aOut = !!a.fields[F.absent], bOut = !!b.fields[F.absent];
+    if (aOut !== bOut) return aOut ? 1 : -1;
+    return playerLabel(a).localeCompare(playerLabel(b));
+  });
+
+  tbody.innerHTML = sorted.map(rec => {
+    const absent  = !!rec.fields[F.absent];
+    const name    = playerLabel(rec);
+    const hasNote = !!(rec.fields[F.notes] || '').trim();
+    const q1 = rec.fields[F.q1]?.name || null;
+    const q2 = rec.fields[F.q2]?.name || null;
+    const q3 = rec.fields[F.q3]?.name || null;
+    const q4 = rec.fields[F.q4]?.name || null;
+
+    return `<tr class="${absent ? 'is-absent' : ''}" data-id="${rec.id}">
+      <td class="td-name">
+        <button class="player-name-btn" onclick="openPlrSheet('${rec.id}')">
+          ${esc(name)}
+          ${absent   ? `<span class="out-badge">OUT</span>` : ''}
+          ${hasNote  ? `<span class="note-dot" title="Has notes"></span>` : ''}
+        </button>
+      </td>
+      <td>${cell(rec, 'Q1', q1, absent)}</td>
+      <td>${cell(rec, 'Q2', q2, absent)}</td>
+      <td>${cell(rec, 'Q3', q3, absent)}</td>
+      <td>${cell(rec, 'Q4', q4, absent)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function cell(rec, q, pos, absent) {
+  if (absent) {
+    return pos
+      ? `<span class="pill pos-${pos}" style="opacity:0.35;cursor:default">${pos}</span>`
+      : `<span style="color:var(--border);font-size:18px">–</span>`;
+  }
+  if (pos) {
+    return `<span class="pill pos-${pos}" onclick="openPosSheet('${rec.id}','${q}')">${pos}</span>`;
+  }
+  return `<span class="empty-cell" onclick="openPosSheet('${rec.id}','${q}')">+</span>`;
+}
+
+// ─── Position Sheet ─────────────────────────────────────────────
+function openPosSheet(recId, q) {
+  editRec = allRecords.find(r => r.id === recId);
+  editQ   = q;
+  const cur = editRec.fields[QF[q]]?.name || null;
+
+  document.getElementById('ps-player').textContent  = playerLabel(editRec);
+  document.getElementById('ps-quarter').textContent = `Quarter ${q.slice(1)}`;
+
+  document.getElementById('ps-picker').innerHTML = POSITIONS.map(p =>
+    `<div class="pos-opt pos-opt-${p}${cur === p ? ' is-current' : ''}"
+      onclick="savePosition('${p}')">${p}</div>`
+  ).join('');
+
+  document.getElementById('pos-overlay').classList.add('active');
+}
+
+function closePosSheet(e) {
+  if (e && e.target !== document.getElementById('pos-overlay')) return;
+  document.getElementById('pos-overlay').classList.remove('active');
+  editRec = null; editQ = null;
+}
+
+async function savePosition(pos) {
+  if (!editRec || !editQ) return;
+  document.getElementById('pos-overlay').classList.remove('active');
+
+  const recId   = editRec.id;
+  const fieldId = QF[editQ];
+  const prev    = editRec.fields[fieldId]?.name || null;
+
+  // Optimistic update
+  if (pos) editRec.fields[fieldId] = { name: pos };
+  else     delete editRec.fields[fieldId];
+  renderGrid(roundGroups[activeRound] || []);
+
+  try {
+    await apiFetch(G_TABLE, `/${recId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: { [fieldId]: pos || null } }),
+    });
+    toast('Saved');
+  } catch (err) {
+    // Revert
+    if (prev) editRec.fields[fieldId] = { name: prev };
+    else delete editRec.fields[fieldId];
+    renderGrid(roundGroups[activeRound] || []);
+    toast('Save failed - check connection', true);
+    console.error(err);
+  }
+
+  editRec = null; editQ = null;
+}
+
+// ─── Player Sheet ────────────────────────────────────────────────
+function openPlrSheet(recId) {
+  plrRec = allRecords.find(r => r.id === recId);
+  const absent  = !!plrRec.fields[F.absent];
+  const notes   = plrRec.fields[F.notes] || '';
+
+  document.getElementById('pl-name').textContent = playerLabel(plrRec);
+
+  document.getElementById('pl-notes').value = notes;
+
+  const actions = document.getElementById('pl-actions');
+  if (absent) {
+    actions.innerHTML = `
+      <button class="action-btn action-present" onclick="toggleAbsent(false)">
+        <span class="icon">✓</span> Mark as Present
+      </button>`;
+  } else {
+    actions.innerHTML = `
+      <button class="action-btn action-absent" onclick="toggleAbsent(true)">
+        <span class="icon">✕</span> Mark as Absent (Out)
+      </button>
+      <button class="action-btn action-cleargame" onclick="clearAllQuarters()">
+        <span class="icon">↺</span> Clear all quarter positions
+      </button>`;
+  }
+
+  document.getElementById('plr-overlay').classList.add('active');
+}
+
+function closePlrSheet(e) {
+  if (e && e.target !== document.getElementById('plr-overlay')) return;
+  document.getElementById('plr-overlay').classList.remove('active');
+  plrRec = null;
+}
+
+async function toggleAbsent(makeAbsent) {
+  if (!plrRec) return;
+  document.getElementById('plr-overlay').classList.remove('active');
+
+  const recId = plrRec.id;
+  plrRec.fields[F.absent] = makeAbsent || null;
+  renderGrid(roundGroups[activeRound] || []);
+
+  try {
+    await apiFetch(G_TABLE, `/${recId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: { [F.absent]: makeAbsent || null } }),
+    });
+    toast(makeAbsent ? 'Marked absent' : 'Marked present');
+  } catch (err) {
+    toast('Save failed', true);
+    console.error(err);
+  }
+  plrRec = null;
+}
+
+async function clearAllQuarters() {
+  if (!plrRec) return;
+  document.getElementById('plr-overlay').classList.remove('active');
+
+  const recId = plrRec.id;
+  delete plrRec.fields[F.q1];
+  delete plrRec.fields[F.q2];
+  delete plrRec.fields[F.q3];
+  delete plrRec.fields[F.q4];
+  renderGrid(roundGroups[activeRound] || []);
+
+  try {
+    await apiFetch(G_TABLE, `/${recId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields: {
+        [F.q1]: null, [F.q2]: null, [F.q3]: null, [F.q4]: null,
+      }}),
+    });
+    toast('Positions cleared');
+  } catch (err) {
+    toast('Save failed', true);
+    console.error(err);
+  }
+  plrRec = null;
+}
+
+let notesSaveTimer = null;
+function saveNotes(val) {
+  if (!plrRec) return;
+  const recId = plrRec.id;
+  plrRec.fields[F.notes] = val;
+  renderGrid(roundGroups[activeRound] || []); // refresh note dot
+
+  clearTimeout(notesSaveTimer);
+  notesSaveTimer = setTimeout(async () => {
+    try {
+      await apiFetch(G_TABLE, `/${recId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ fields: { [F.notes]: val || null } }),
+      });
+      toast('Note saved');
+    } catch (err) {
+      toast('Note save failed', true);
+    }
+  }, 800);
+}
+
+// ─── Toast ──────────────────────────────────────────────────────
+let toastTimer = null;
+function toast(msg, err = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show${err ? ' err' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, 2200);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────
+function fmtDate(str) {
+  if (!str) return '';
+  return new Date(str).toLocaleDateString('en-AU', {
+    weekday: 'short', day: 'numeric', month: 'short',
+  });
+}
+
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showApp() {
+  document.getElementById('setup').classList.remove('active');
+  document.getElementById('app').classList.add('active');
+}
+
+function showSetup() {
+  document.getElementById('setup').classList.add('active');
+  document.getElementById('app').classList.remove('active');
+}
+
+// ─── Init ────────────────────────────────────────────────────────
+token = localStorage.getItem('kw_token');
+if (token) {
+  showApp();
+  loadAll();
+} else {
+  showSetup();
+}
+</script>
+</body>
+</html>
