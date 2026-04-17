@@ -483,6 +483,7 @@ const SF = {
   event    : 'fldSjBwSQseOdoOGZ',
   rivals   : 'fldp59qRyPTDzTCo0',
   dateTime : 'fldc6i7CaO7BNP5S9',
+  court    : 'fld1H1S54qiRX7VuO',
   type     : 'flde7M82OXbgMr2zw',
 };
 
@@ -574,7 +575,7 @@ async function loadAll() {
   try {
     const [games, sched] = await Promise.all([
       fetchAllPages(G_TABLE, Object.values(F)),
-      fetchAllPages(S_TABLE, [SF.event, SF.rivals, SF.dateTime]),
+      fetchAllPages(S_TABLE, [SF.event, SF.rivals, SF.dateTime, SF.court]),
     ]);
 
     // Build schedule map: "Round 02" -> {rival, date}
@@ -588,6 +589,7 @@ async function loadAll() {
       scheduleMap[key] = {
         rival : s.fields[SF.rivals]?.name || '',
         date  : s.fields[SF.dateTime] || '',
+        court : s.fields[SF.court]?.name || '',
       };
     }
 
@@ -617,7 +619,12 @@ function buildGroups() {
 function populateSelector() {
   const sel = document.getElementById('round-select');
   const keys = Object.keys(roundGroups).sort((a, b) => roundNum(a) - roundNum(b));
-  sel.innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+  sel.innerHTML = keys.map(k => {
+    const info = scheduleMap[k] || {};
+    const rival = info.rival ? ` · vs ${info.rival}` : '';
+    const court = info.court || 'Court TBC';
+    return `<option value="${k}">${k}${rival} · ${court}</option>`;
+  }).join('');
 }
 
 function roundNum(name) {
@@ -649,6 +656,7 @@ function onRoundChange(roundName) {
   const parts = [];
   if (info.rival) parts.push(`vs ${info.rival}`);
   if (info.date)  parts.push(fmtDate(info.date));
+  parts.push(info.court || 'Court TBC');
   document.getElementById('round-meta').textContent = parts.join(' · ');
   renderGrid(roundGroups[roundName] || []);
 }
