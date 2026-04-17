@@ -249,7 +249,7 @@
     .pos-WD  { background: var(--wd-bg);  color: var(--wd);  border-color: var(--wd);  }
     .pos-GD  { background: var(--gd-bg);  color: var(--gd);  border-color: var(--gd);  }
     .pos-GK  { background: var(--gk-bg);  color: var(--gk);  border-color: var(--gk);  }
-    .pos-Sub { background: var(--sub-bg); color: var(--sub); border-color: var(--sub); }
+    .pos-Sub { background: var(--sub-bg); color: var(--sub); border-color: transparent; }
 
     /* Saving shimmer */
     .saving .pill, .saving .empty-cell { opacity: 0.45; pointer-events: none; }
@@ -320,7 +320,19 @@
     .pos-opt-WD  { background: var(--wd-bg);  color: var(--wd);  border-color: var(--wd);  }
     .pos-opt-GD  { background: var(--gd-bg);  color: var(--gd);  border-color: var(--gd);  }
     .pos-opt-GK  { background: var(--gk-bg);  color: var(--gk);  border-color: var(--gk);  }
-    .pos-opt-Sub { background: var(--sub-bg); color: var(--sub); border-color: var(--sub); }
+    .pos-opt-Sub { background: var(--sub-bg); color: var(--sub); border-color: transparent; }
+
+    .absent-chk {
+      width: 22px; height: 22px; flex-shrink: 0;
+      border: 2px solid var(--border); border-radius: 5px;
+      background: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 900; color: transparent;
+      transition: all 0.15s;
+    }
+    .absent-chk.checked {
+      background: #fee2e2; border-color: #dc2626; color: #dc2626;
+    }
 
     .btn-clear-pos {
       width: 100%; padding: 13px;
@@ -459,6 +471,7 @@ const F = {
   q2          : 'fldHMDnk96axMIFp5',
   q3          : 'fldCwYv2bW7D9W4Uc',
   q4          : 'fldhhR5U2QeXAwdsO',
+  lastName    : 'fldCbVCIzkiVO82z1',
   absent      : 'fld6RUTGJJmLKCSVd',
   notes       : 'fld3JxHX6Vl7dcNW8',
   round       : 'fldWbZwJLf4rK0XkQ',
@@ -660,7 +673,14 @@ function showError(msg) {
 function playerLabel(rec) {
   const raw = rec.fields[F.playerRound] || '';
   const parts = raw.split(' - ');
-  return parts.slice(1).join(' ') || raw;
+  const first = parts.slice(1).join(' ') || raw;
+  const lastArr = rec.fields[F.lastName];
+  const last = Array.isArray(lastArr) ? lastArr[0] : (lastArr || '');
+  // Avoid doubling if first already contains the last name
+  if (last && !first.toLowerCase().includes(last.toLowerCase())) {
+    return `${first} ${last}`;
+  }
+  return first;
 }
 
 function renderGrid(records) {
@@ -688,11 +708,14 @@ function renderGrid(records) {
 
     return `<tr class="${absent ? 'is-absent' : ''}" data-id="${rec.id}">
       <td class="td-name">
-        <button class="player-name-btn" onclick="openPlrSheet('${rec.id}')">
-          ${esc(name)}
-          ${absent   ? `<span class="out-badge">OUT</span>` : ''}
-          ${hasNote  ? `<span class="note-dot" title="Has notes"></span>` : ''}
-        </button>
+        <div style="display:flex;align-items:center;gap:7px">
+          <button class="absent-chk${absent ? ' checked' : ''}"
+            onclick="quickToggleAbsent('${rec.id}')" title="${absent ? 'Mark present' : 'Mark absent'}">✕</button>
+          <button class="player-name-btn" onclick="openPlrSheet('${rec.id}')">
+            ${esc(name)}
+            ${hasNote ? `<span class="note-dot" title="Has notes"></span>` : ''}
+          </button>
+        </div>
       </td>
       <td>${cell(rec, 'Q1', q1, absent)}</td>
       <td>${cell(rec, 'Q2', q2, absent)}</td>
@@ -803,16 +826,24 @@ function closePlrSheet(e) {
   plrRec = null;
 }
 
+async function quickToggleAbsent(recId) {
+  const rec = allRecords.find(r => r.id === recId);
+  if (!rec) return;
+  await toggleAbsentRec(rec, !rec.fields[F.absent]);
+}
+
 async function toggleAbsent(makeAbsent) {
   if (!plrRec) return;
   document.getElementById('plr-overlay').classList.remove('active');
+  await toggleAbsentRec(plrRec, makeAbsent);
+  plrRec = null;
+}
 
-  const recId = plrRec.id;
-  plrRec.fields[F.absent] = makeAbsent || null;
+async function toggleAbsentRec(rec, makeAbsent) {
+  rec.fields[F.absent] = makeAbsent || null;
   renderGrid(roundGroups[activeRound] || []);
-
   try {
-    await apiFetch(G_TABLE, `/${recId}`, {
+    await apiFetch(G_TABLE, `/${rec.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ fields: { [F.absent]: makeAbsent || null } }),
     });
@@ -821,7 +852,6 @@ async function toggleAbsent(makeAbsent) {
     toast('Save failed', true);
     console.error(err);
   }
-  plrRec = null;
 }
 
 async function clearAllQuarters() {
