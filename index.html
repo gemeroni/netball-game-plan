@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Netball Game Planner</title>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -136,14 +137,6 @@
       cursor: pointer; transition: all 0.15s;
     }
     .alloc-opt.active { background: var(--gold); color: var(--navy-dark); }
-    .contra-label {
-      display: flex; align-items: center; gap: 5px;
-      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
-      color: rgba(255,255,255,0.5); cursor: pointer;
-      border-left: 1px solid rgba(255,255,255,0.15);
-      padding-left: 10px; margin-left: 2px;
-    }
-    .contra-label input[type=checkbox] { accent-color: var(--gold); width: 13px; height: 13px; cursor: pointer; }
     .settings-btn {
       background: rgba(255,255,255,0.12);
       border: none; color: white;
@@ -546,6 +539,25 @@
     /* Player rows become obvious tap targets when a card is picked */
     .pick-mode tbody tr:not(.is-absent) { cursor: pointer; }
     .pick-mode tbody tr:not(.is-absent):active { background: rgba(26,58,92,0.07); }
+
+    /* ── Compact capture card (off-screen render target) ── */
+    #capture-wrap {
+      position: fixed; left: -9999px; top: 0;
+      width: 620px;
+    }
+    .cc { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; border-radius: 16px; overflow: hidden; }
+    .cc-header { background: #0f1c2e; padding: 18px 20px 16px; }
+    .cc-team { color: #f0b429; font-size: 18px; font-weight: 900; letter-spacing: -0.3px; margin-bottom: 4px; }
+    .cc-round { color: rgba(255,255,255,0.9); font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+    .cc-meta { color: rgba(255,255,255,0.5); font-size: 11px; }
+    .cc-grid { padding: 12px 16px 16px; }
+    .cc-grid table { width: 100%; border-collapse: collapse; }
+    .cc-grid th { font-size: 10px; font-weight: 800; color: #6b7280; text-transform: uppercase; letter-spacing: 0.06em; padding: 0 4px 8px; text-align: center; }
+    .cc-grid th:first-child { text-align: left; padding-left: 0; }
+    .cc-grid td { padding: 3px 4px; text-align: center; vertical-align: middle; border-top: 1px solid #f3f4f6; }
+    .cc-grid td:first-child { text-align: left; padding-left: 0; font-size: 13px; font-weight: 600; color: #111827; }
+    .cc-pill { display: inline-block; font-size: 11px; font-weight: 800; padding: 4px 8px; border-radius: 7px; line-height: 1; }
+    .cc-footer { background: #f9fafb; padding: 8px 16px; text-align: right; font-size: 10px; color: #9ca3af; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -574,6 +586,7 @@
     <div class="header-row1">
       <div class="brand">Kiwales Emerald</div>
       <div class="header-actions">
+        <button class="settings-btn" onclick="captureShare()" title="Share game plan" style="font-size:15px">⤴</button>
         <button class="clear-btn" onclick="confirmClearQuarter()" title="Clear active quarter assignments">CLEAR</button>
         <button class="auto-btn" onclick="applyAutoAllocate()" title="Auto-allocate positions across the season">AUTO</button>
         <button class="settings-btn" onclick="showHelp()" title="Guide" style="font-size:14px;font-weight:900;border-radius:50%">ⓘ</button>
@@ -593,10 +606,6 @@
         <button class="alloc-opt active" id="alloc-quarter" onclick="setAllocMode('quarter')">QUARTER</button>
         <button class="alloc-opt" id="alloc-half" onclick="setAllocMode('half')">HALF</button>
       </div>
-      <label class="contra-label" id="contra-label">
-        <input type="checkbox" id="contra-check" onchange="contraMode = this.checked">
-        <span>Contra-logic</span>
-      </label>
     </div>
   </div>
 
@@ -649,7 +658,6 @@
     <ul>
       <li><strong>QUARTER mode</strong> - each quarter is solved independently. Best for maximum rotation.</li>
       <li><strong>HALF mode</strong> - positions stay the same across each half (Q1=Q2, Q3=Q4 roughly). Only the sub player swaps mid-half. Good for players who need time to settle into a position.</li>
-      <li><strong>Contra-logic</strong> (checkbox, HALF only) - with 8 players there is one Sub per quarter. The player who is Sub in the first quarter of a half plays WD in the second quarter. The player who played WD in the first quarter takes Sub. Every player gets court time in at least 3 of 4 quarters.</li>
     </ul>
     <p>In all modes, no player will sub more than once per game.</p>
 
@@ -1427,7 +1435,11 @@ function computeAutoAllocate(excludePos = []) {
     }
   }
 
-  // Within-game position usage for variety penalty (×5)
+  // Within-game position usage for variety + zone balance
+  const ATTACK_POS  = new Set(['GS', 'GA', 'WA']);
+  const DEFENCE_POS = new Set(['GK', 'GD', 'WD']);
+  const zoneOf = p => ATTACK_POS.has(p) ? 1 : DEFENCE_POS.has(p) ? -1 : 0;
+
   const inGameCount = {};
   for (const rec of recs) {
     inGameCount[rec.id] = {};
@@ -1437,9 +1449,32 @@ function computeAutoAllocate(excludePos = []) {
     }
   }
 
+  // Within-game zone tally: positive = more attack, negative = more defence
+  const inGameZone = (rec) => {
+    let z = 0;
+    for (const [pos, cnt] of Object.entries(inGameCount[rec.id] || {})) z += zoneOf(pos) * cnt;
+    return z;
+  };
+
   const score = (rec, pos) => {
-    const pid = (rec.fields[F.player] || [])[0];
-    return (pid ? (history[pid]?.[pos] || 0) : 0) + (inGameCount[rec.id]?.[pos] || 0) * 5;
+    const pid   = (rec.fields[F.player] || [])[0];
+    const pHist = pid ? (history[pid] || {}) : {};
+
+    // Season-wide position repetition (primary fairness driver)
+    const seasonPos = pHist[pos] || 0;
+
+    // Season-wide zone imbalance (light penalty to nudge long-term balance)
+    const seasonAttack  = ['GS','GA','WA'].reduce((s,p) => s + (pHist[p]||0), 0);
+    const seasonDefence = ['GK','GD','WD'].reduce((s,p) => s + (pHist[p]||0), 0);
+    const seasonZoneImbalance = (seasonAttack - seasonDefence) * zoneOf(pos);
+
+    // Within-game same-position repeat penalty (strong: keeps positions varied)
+    const gameRepeat = (inGameCount[rec.id]?.[pos] || 0) * 5;
+
+    // Within-game zone imbalance (strongest: ensures attack/defence split each round)
+    const gameZoneImbalance = inGameZone(rec) * zoneOf(pos) * 4;
+
+    return seasonPos + seasonZoneImbalance + gameRepeat + gameZoneImbalance;
   };
 
   // Assign one quarter. Returns the recId that got Sub this quarter (or null).
@@ -1591,6 +1626,88 @@ function maybeShowGuide() {
   if (localStorage.getItem('hideGuide') !== '1') showHelp();
 }
 
+// ─── Compact capture ─────────────────────────────────────────────
+const POS_STYLE = {
+  GS:  { bg: '#dc2626', color: '#fff' },
+  GA:  { bg: '#ea580c', color: '#fff' },
+  WA:  { bg: '#e59900', color: '#fff' },
+  C:   { bg: '#16a34a', color: '#fff' },
+  WD:  { bg: '#0d9488', color: '#fff' },
+  GD:  { bg: '#0284c7', color: '#fff' },
+  GK:  { bg: '#7c3aed', color: '#fff' },
+  Sub: { bg: '#f1f5f9', color: '#4b5563' },
+};
+
+async function captureShare() {
+  if (!activeRound) { toast('No round selected'); return; }
+  const recs = (roundGroups[activeRound] || []).filter(r => !r.fields[F.absent]);
+  const info = scheduleMap[activeRound] || {};
+
+  const vs   = vsString(info.rival || '?', info.homeAway);
+  const date = info.date ? fmtLongDate(info.date) : '';
+  const time = info.date ? fmtTime(info.date)     : '';
+  const meta = [info.court ? `Court ${info.court}` : '', info.homeAway ? `${info.homeAway} Game` : ''].filter(Boolean).join(' · ');
+
+  const pillHtml = (pos) => {
+    if (!pos) return '<span style="color:#d1d5db;font-size:11px">—</span>';
+    const s = POS_STYLE[pos] || { bg: '#e5e7eb', color: '#374151' };
+    return `<span class="cc-pill" style="background:${s.bg};color:${s.color}">${pos}</span>`;
+  };
+
+  const rows = recs.map(rec => {
+    const name = playerLabel(rec);
+    const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const shortName = name.length > 14 ? name.split(' ').map((w, i) => i === 0 ? w[0] + '.' : w).join(' ') : name;
+    return `<tr>
+      <td>${shortName}</td>
+      <td>${pillHtml(rec.fields[QF.Q1])}</td>
+      <td>${pillHtml(rec.fields[QF.Q2])}</td>
+      <td>${pillHtml(rec.fields[QF.Q3])}</td>
+      <td>${pillHtml(rec.fields[QF.Q4])}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('capture-card').innerHTML = `
+    <div class="cc-header">
+      <div class="cc-team">${TEAM_NAME}</div>
+      <div class="cc-round">${activeRound} &nbsp;·&nbsp; ${vs}</div>
+      <div class="cc-meta">${[date, time, meta].filter(Boolean).join(' · ')}</div>
+    </div>
+    <div class="cc-grid">
+      <table>
+        <thead><tr>
+          <th>Player</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="cc-footer">Netball Game Planner</div>`;
+
+  toast('Generating…');
+  try {
+    const canvas = await html2canvas(document.getElementById('capture-card'), {
+      scale: 2, useCORS: true, backgroundColor: '#ffffff',
+      width: 620, logging: false,
+    });
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], `gameplan-${activeRound.replace(/\s+/g, '-')}.png`, { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${TEAM_NAME} ${activeRound}` });
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = file.name;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        toast('Image saved');
+      }
+    }, 'image/png');
+  } catch (err) {
+    toast('Capture failed', true);
+    console.error(err);
+  }
+}
+
 // ─── Alloc mode ──────────────────────────────────────────────────
 function setAllocMode(mode) {
   if (allocMode === mode) return;
@@ -1709,6 +1826,18 @@ function showSetup() {
 }
 
 // ─── Init ────────────────────────────────────────────────────────
+// Support ?token=patXXX or #token=patXXX for one-click onboarding.
+// Extract, save, then scrub from the URL so it's not visible or bookmarked.
+(function () {
+  const hashToken = new URLSearchParams(window.location.hash.slice(1)).get('token');
+  const qsToken   = new URLSearchParams(window.location.search).get('token');
+  const incoming  = hashToken || qsToken;
+  if (incoming) {
+    localStorage.setItem('kw_token', incoming);
+    history.replaceState(null, '', window.location.pathname);
+  }
+})();
+
 token = localStorage.getItem('kw_token');
 if (token) {
   showApp();
@@ -1717,5 +1846,6 @@ if (token) {
   showSetup();
 }
 </script>
+<div id="capture-wrap"><div class="cc" id="capture-card"></div></div>
 </body>
 </html>
