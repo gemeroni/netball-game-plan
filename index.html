@@ -99,6 +99,18 @@
       margin-bottom: 10px;
     }
     .brand { color: var(--gold); font-size: 17px; font-weight: 900; letter-spacing: -0.3px; }
+    .header-actions { display: flex; align-items: center; gap: 7px; }
+    .auto-btn {
+      background: var(--gold);
+      border: none; color: var(--navy-dark);
+      height: 32px; padding: 0 11px;
+      border-radius: 8px;
+      font-size: 12px; font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .auto-btn:active { opacity: 0.75; }
     .settings-btn {
       background: rgba(255,255,255,0.12);
       border: none; color: white;
@@ -498,7 +510,10 @@
   <div class="header">
     <div class="header-row1">
       <div class="brand">Kiwales Emerald</div>
-      <button class="settings-btn" onclick="showDisconnect()" title="Settings">⚙</button>
+      <div class="header-actions">
+        <button class="auto-btn" onclick="applyAutoAllocate()" title="Auto-allocate positions across the season">AUTO</button>
+        <button class="settings-btn" onclick="showDisconnect()" title="Settings">⚙</button>
+      </div>
     </div>
     <div class="round-row">
       <select class="round-select" id="round-select" onchange="onRoundChange(this.value)">
@@ -1111,6 +1126,90 @@ async function toggleAbsent(makeAbsent) {
   plrRec = null;
 }
 
+// ─── Absence Cascade ────────────────────────────────────────────
+function isFillIn(rec) {
+  return /fill.?in/i.test(rec.fields[F.playerRound] || '');
+}
+
+function activeCount() {
+  return (roundGroups[activeRound] || []).filter(r => !r.fields[F.absent]).length;
+}
+
+async function cascadeAbsence(rec) {
+  const recs = roundGroups[activeRound] || [];
+
+  // Gather positions the absent player held
+  const posMap = {}; // fieldId -> pos
+  for (const [, fid] of Object.entries(QF)) {
+    if (rec.fields[fid]) posMap[fid] = rec.fields[fid];
+  }
+
+  const toSave = []; // { recId, fields }
+  const patch  = (r, fields) => {
+    const existing = toSave.find(x => x.recId === r.id);
+    if (existing) Object.assign(existing.fields, fields);
+    else toSave.push({ recId: r.id, fields: { ...fields } });
+  };
+
+  if (Object.keys(posMap).length) {
+    if (isFillIn(rec)) {
+      // Fill In absent: push their positions to Sub players
+      for (const [fid, pos] of Object.entries(posMap)) {
+        const sub = recs.find(r => !r.fields[F.absent] && r.id !== rec.id && r.fields[fid] === 'Sub');
+        if (sub) { sub.fields[fid] = pos; patch(sub, { [fid]: pos }); }
+      }
+    } else {
+      // Regular player absent: push positions to Fill In
+      const fillIn = recs.find(r => isFillIn(r) && !r.fields[F.absent]);
+      if (fillIn) {
+        for (const [fid, pos] of Object.entries(posMap)) {
+          fillIn.fields[fid] = pos;
+        }
+        patch(fillIn, { ...posMap });
+      }
+    }
+
+    // Clear the absent player's positions
+    const clearFields = {};
+    for (const fid of Object.keys(posMap)) {
+      delete rec.fields[fid];
+      clearFields[fid] = null;
+    }
+    patch(rec, clearFields);
+  }
+
+  // With ≤6 active players, drop WD and auto-fill the gaps
+  if (activeCount() <= 6) {
+    for (const [, fid] of Object.entries(QF)) {
+      for (const r of recs) {
+        if (!r.fields[F.absent] && r.fields[fid] === 'WD') {
+          delete r.fields[fid];
+          patch(r, { [fid]: null });
+        }
+      }
+    }
+    // Auto-allocate remaining empty slots excluding WD
+    const autoChanges = computeAutoAllocate(['WD']);
+    for (const { rec: ar, fieldId, pos } of autoChanges) {
+      ar.fields[fieldId] = pos;
+      patch(ar, { [fieldId]: pos });
+    }
+  }
+
+  renderGrid(roundGroups[activeRound] || []);
+  refreshBucket();
+
+  if (!toSave.length) return;
+  try {
+    await Promise.all(toSave.map(({ recId, fields }) =>
+      apiFetch(G_TABLE, `/${recId}`, { method: 'PATCH', body: JSON.stringify({ fields }) })
+    ));
+  } catch (err) {
+    toast('Cascade save failed', true);
+    console.error(err);
+  }
+}
+
 async function toggleAbsentRec(rec, makeAbsent) {
   rec.fields[F.absent] = makeAbsent || null;
   renderGrid(roundGroups[activeRound] || []);
@@ -1119,7 +1218,11 @@ async function toggleAbsentRec(rec, makeAbsent) {
       method: 'PATCH',
       body: JSON.stringify({ fields: { [F.absent]: makeAbsent || null } }),
     });
-    toast(makeAbsent ? 'Marked absent' : 'Marked present');
+    if (makeAbsent) {
+      toast('Marked absent - reassigning positions...');
+      await cascadeAbsence(rec);
+    }
+    toast(makeAbsent ? 'Marked absent - positions reassigned' : 'Marked present');
   } catch (err) {
     toast('Save failed', true);
     console.error(err);
@@ -1170,6 +1273,102 @@ function saveNotes(val) {
       toast('Note save failed', true);
     }
   }, 800);
+}
+
+// ─── Auto-Allocate ───────────────────────────────────────────────
+function buildPositionHistory() {
+  // Scan every record across all rounds: { playerId -> { pos -> count } }
+  const history = {};
+  for (const rec of allRecords) {
+    const pid = (rec.fields[F.player] || [])[0];
+    if (!pid) continue;
+    if (!history[pid]) history[pid] = {};
+    for (const fid of Object.values(QF)) {
+      const pos = rec.fields[fid];
+      if (pos) history[pid][pos] = (history[pid][pos] || 0) + 1;
+    }
+  }
+  return history;
+}
+
+function computeAutoAllocate(excludePos = []) {
+  const history  = buildPositionHistory();
+  const recs     = (roundGroups[activeRound] || []).filter(r => !r.fields[F.absent]);
+  const changes  = [];
+  const courtPos = POSITIONS.filter(p => p !== 'Sub' && !excludePos.includes(p));
+
+  for (const [, fieldId] of Object.entries(QF)) {
+    const locked      = new Set(); // recIds already assigned this quarter
+    const usedPos     = new Set(); // positions already taken this quarter
+
+    for (const rec of recs) {
+      const pos = rec.fields[fieldId];
+      if (pos) { locked.add(rec.id); usedPos.add(pos); }
+    }
+
+    const freePlayers  = recs.filter(r => !locked.has(r.id));
+    const freeCourtPos = courtPos.filter(p => !usedPos.has(p));
+    if (!freePlayers.length) continue;
+
+    // Score: times player has already played this position (lower = assign first)
+    const score = (rec, pos) => {
+      const pid = (rec.fields[F.player] || [])[0];
+      return pid ? (history[pid]?.[pos] || 0) : 0;
+    };
+
+    // Build all candidate pairs, sort by score (ascending)
+    const pairs = [];
+    for (const pos of freeCourtPos) {
+      for (const rec of freePlayers) {
+        pairs.push({ pos, rec, s: score(rec, pos) });
+      }
+    }
+    pairs.sort((a, b) => a.s - b.s || playerLabel(a.rec).localeCompare(playerLabel(b.rec)));
+
+    const assignedPlayers = new Set();
+    const assignedPos     = new Set();
+
+    for (const { pos, rec } of pairs) {
+      if (assignedPlayers.has(rec.id) || assignedPos.has(pos)) continue;
+      assignedPlayers.add(rec.id);
+      assignedPos.add(pos);
+      changes.push({ rec, fieldId, pos });
+    }
+
+    // Remaining players get Sub
+    for (const rec of freePlayers) {
+      if (!assignedPlayers.has(rec.id)) changes.push({ rec, fieldId, pos: 'Sub' });
+    }
+  }
+
+  return changes;
+}
+
+async function applyAutoAllocate() {
+  const changes = computeAutoAllocate();
+  if (!changes.length) { toast('All positions already filled'); return; }
+
+  // Optimistic update
+  for (const { rec, fieldId, pos } of changes) rec.fields[fieldId] = pos;
+  renderGrid(roundGroups[activeRound] || []);
+  refreshBucket();
+
+  // Batch by record and save
+  const byRec = {};
+  for (const { rec, fieldId, pos } of changes) {
+    if (!byRec[rec.id]) byRec[rec.id] = {};
+    byRec[rec.id][fieldId] = pos;
+  }
+
+  try {
+    await Promise.all(Object.entries(byRec).map(([recId, fields]) =>
+      apiFetch(G_TABLE, `/${recId}`, { method: 'PATCH', body: JSON.stringify({ fields }) })
+    ));
+    toast(`${changes.length} position${changes.length > 1 ? 's' : ''} auto-allocated`);
+  } catch (err) {
+    toast('Auto-allocate save failed', true);
+    console.error(err);
+  }
 }
 
 // ─── Toast ──────────────────────────────────────────────────────
