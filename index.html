@@ -23,7 +23,7 @@
 
       --gs:  #dc2626; --gs-bg:  #fef2f2;
       --ga:  #ea580c; --ga-bg:  #fff7ed;
-      --wa:  #c8980a; --wa-bg:  #fef8e1;
+      --wa:  #e59900; --wa-bg:  #fffbcc;
       --c:   #16a34a; --c-bg:   #f0fdf4;
       --wd:  #0d9488; --wd-bg:  #f0fdfa;
       --gd:  #0284c7; --gd-bg:  #e0f2fe;
@@ -128,10 +128,18 @@
     .round-select option { background: var(--navy-dark); }
 
     .round-meta {
-      font-size: 12px;
-      color: rgba(255,255,255,0.55);
-      margin-top: 5px;
-      min-height: 15px;
+      font-size: 14px;
+      color: rgba(255,255,255,0.75);
+      margin-top: 6px;
+      min-height: 17px;
+      font-weight: 500;
+    }
+
+    .round-duty {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      margin-top: 3px;
+      min-height: 13px;
     }
 
     /* ── Grid ───────────────────────────────────────────────── */
@@ -413,6 +421,7 @@
       </select>
     </div>
     <div class="round-meta" id="round-meta"></div>
+    <div class="round-duty" id="round-duty"></div>
   </div>
 
   <div class="grid-wrap">
@@ -462,7 +471,11 @@
 const BASE      = 'appFYVGJzbhxXJ1Gk';
 const G_TABLE   = 'tblSpvItnauxk44vM';
 const S_TABLE   = 'tblThMzxc1CfRrB7U';
+const P_TABLE   = 'tblThOK4KidqPrHF3';
 const API       = `https://api.airtable.com/v0/${BASE}`;
+
+const TEAM_NAME = 'Kiwales Emerald';
+const TEAM_SET  = 'SET 3';
 
 const F = {
   playerRound : 'fldJ8iosCsMqDvS64',
@@ -480,26 +493,35 @@ const F = {
 };
 
 const SF = {
-  event    : 'fldSjBwSQseOdoOGZ',
-  rivals   : 'fldp59qRyPTDzTCo0',
-  dateTime : 'fldc6i7CaO7BNP5S9',
-  court    : 'fld1H1S54qiRX7VuO',
-  homeAway : 'fld0tq16IwimRMxkP',
-  type     : 'flde7M82OXbgMr2zw',
+  event       : 'fldSjBwSQseOdoOGZ',
+  rivals      : 'fldp59qRyPTDzTCo0',
+  dateTime    : 'fldc6i7CaO7BNP5S9',
+  court       : 'fld1H1S54qiRX7VuO',
+  homeAway    : 'fld0tq16IwimRMxkP',
+  type        : 'flde7M82OXbgMr2zw',
+  teamDuty    : 'flde7tXgV1xvmPdAb',
+  dutyFamily  : 'fldYjD2me3hrlzaAd',
+  fruitFamily : 'fldnVeoaQpALu6EeW',
+};
+
+const PF = {
+  firstName : 'fld5y1KU7T7gfvodU',
+  lastName  : 'fldtqa1bqbPEv2FE9',
 };
 
 const QF = { Q1: F.q1, Q2: F.q2, Q3: F.q3, Q4: F.q4 };
 const POSITIONS = ['GK','GD','WD','C','WA','GA','GS','Sub'];
 
 // ─── State ─────────────────────────────────────────────────────
-let token       = null;
-let allRecords  = [];
-let scheduleMap = {};   // "Round 02" -> { rival, date }
-let roundGroups = {};
-let activeRound = null;
-let editRec     = null;
-let editQ       = null;
-let plrRec      = null;
+let token          = null;
+let allRecords     = [];
+let scheduleMap    = {};   // "Round 02" -> { rival, date, court, homeAway, teamDuty, dutyFamilyIds, fruitFamilyIds }
+let participantsMap = {};  // recId -> "First Last"
+let roundGroups    = {};
+let activeRound    = null;
+let editRec        = null;
+let editQ          = null;
+let plrRec         = null;
 
 // ─── Auth ───────────────────────────────────────────────────────
 function saveToken() {
@@ -554,7 +576,6 @@ async function apiFetch(table, path = '', opts = {}) {
 }
 
 function qp(fields) {
-  // Build ?fields[]=fld1&fields[]=fld2 style query string
   return fields.map(f => `fields[]=${encodeURIComponent(f)}`).join('&');
 }
 
@@ -574,24 +595,37 @@ async function fetchAllPages(table, fields) {
 async function loadAll() {
   setLoading(true);
   try {
-    const [games, sched] = await Promise.all([
+    const [games, sched, participants] = await Promise.all([
       fetchAllPages(G_TABLE, Object.values(F)),
-      fetchAllPages(S_TABLE, [SF.event, SF.rivals, SF.dateTime, SF.court, SF.homeAway]),
+      fetchAllPages(S_TABLE, [SF.event, SF.rivals, SF.dateTime, SF.court, SF.homeAway, SF.teamDuty, SF.dutyFamily, SF.fruitFamily]),
+      fetchAllPages(P_TABLE, [PF.firstName, PF.lastName]),
     ]);
 
-    // Build schedule map: "Round 02" -> {rival, date}
+    // Build participants lookup: recId -> "First Last"
+    participantsMap = {};
+    for (const p of participants) {
+      const first = p.fields[PF.firstName] || '';
+      const last  = p.fields[PF.lastName]  || '';
+      participantsMap[p.id] = `${first} ${last}`.trim() || p.id;
+    }
+
+    // Build schedule map: "Round 02" -> { rival, date, court, homeAway, ... }
     scheduleMap = {};
     for (const s of sched) {
       const name = s.fields[SF.event] || '';
-      // Event is e.g. "Round 02 - Game" - extract round part
-      const m = name.match(/Round\s+\d+/i);
+      const m = name.match(/Round\s+(\d+)/i);
       if (!m) continue;
-      const key = m[0]; // "Round 02"
+      const key = `Round ${m[1].padStart(2, '0')}`;
+      const dutyIds  = s.fields[SF.dutyFamily]  || [];
+      const fruitIds = s.fields[SF.fruitFamily] || [];
       scheduleMap[key] = {
-        rival    : s.fields[SF.rivals] || '',
-        date     : s.fields[SF.dateTime] || '',
-        court    : s.fields[SF.court] || '',
-        homeAway : s.fields[SF.homeAway] || '',
+        rival          : s.fields[SF.rivals]   || '',
+        date           : s.fields[SF.dateTime] || '',
+        court          : s.fields[SF.court]    || '',
+        homeAway       : s.fields[SF.homeAway] || '',
+        teamDuty       : s.fields[SF.teamDuty] || '',
+        dutyFamilyIds  : Array.isArray(dutyIds)  ? dutyIds  : [dutyIds].filter(Boolean),
+        fruitFamilyIds : Array.isArray(fruitIds) ? fruitIds : [fruitIds].filter(Boolean),
       };
     }
 
@@ -622,7 +656,7 @@ function buildGroups() {
     if (opp && scheduleMap[roundName] && !scheduleMap[roundName].rival) {
       scheduleMap[roundName].rival = opp;
     } else if (opp && !scheduleMap[roundName]) {
-      scheduleMap[roundName] = { rival: opp, date: '', court: '' };
+      scheduleMap[roundName] = { rival: opp, date: '', court: '', homeAway: '', teamDuty: '', dutyFamilyIds: [], fruitFamilyIds: [] };
     }
   }
 }
@@ -631,11 +665,13 @@ function populateSelector() {
   const sel = document.getElementById('round-select');
   const keys = Object.keys(roundGroups).sort((a, b) => roundNum(a) - roundNum(b));
   sel.innerHTML = keys.map(k => {
-    const info = scheduleMap[k] || {};
-    const rival    = info.rival ? ` · vs ${info.rival}` : '';
-    const ha       = info.homeAway ? ` (${info.homeAway})` : '';
-    const court    = info.court || 'Court TBC';
-    return `<option value="${k}">${k}${rival}${ha} · ${court}</option>`;
+    const info  = scheduleMap[k] || {};
+    const parts = [];
+    if (info.date) parts.push(isoDate(info.date));
+    parts.push(k);
+    parts.push(info.court || 'Court TBC');
+    if (info.homeAway) parts.push(homeAwayLabel(info.homeAway));
+    return `<option value="${k}">${parts.join(' · ')}</option>`;
   }).join('');
 }
 
@@ -648,8 +684,7 @@ function autoSelectRound() {
   const keys  = Object.keys(roundGroups).sort((a, b) => roundNum(a) - roundNum(b));
   if (!keys.length) return;
 
-  // Find nearest upcoming round by schedule date
-  let chosen = keys[keys.length - 1]; // default: last round
+  let chosen = keys[keys.length - 1];
   for (const k of keys) {
     const info = scheduleMap[k];
     if (info?.date) {
@@ -665,11 +700,26 @@ function autoSelectRound() {
 function onRoundChange(roundName) {
   activeRound = roundName;
   const info = scheduleMap[roundName] || {};
-  const parts = [];
-  if (info.rival)    parts.push(`vs ${info.rival}${info.homeAway ? ` (${info.homeAway})` : ''}`);
-  if (info.date)     parts.push(fmtDate(info.date));
-  parts.push(info.court || 'Court TBC');
-  document.getElementById('round-meta').textContent = parts.join(' · ');
+
+  // Meta line: SET 3 · Round 01 · Kiwales Emerald VS Warriors Pandas · Friday 1 May 2026 · 4:30pm
+  const metaParts = [TEAM_SET, roundName];
+  if (info.rival) metaParts.push(vsString(info.rival, info.homeAway));
+  if (info.date) {
+    metaParts.push(fmtLongDate(info.date));
+    if (info.date.includes('T')) metaParts.push(fmtTime(info.date));
+  }
+  document.getElementById('round-meta').textContent = metaParts.join(' · ');
+
+  // Duty line
+  const dutyParts = [];
+  if (info.teamDuty) {
+    const fam = resolveParticipants(info.dutyFamilyIds);
+    dutyParts.push(`${info.teamDuty} Duty${fam ? `: ${fam}` : ''}`);
+  }
+  const fruit = resolveParticipants(info.fruitFamilyIds);
+  if (fruit) dutyParts.push(`Fruit Duty: ${fruit}`);
+  document.getElementById('round-duty').textContent = dutyParts.join(' · ');
+
   renderGrid(roundGroups[roundName] || []);
 }
 
@@ -696,7 +746,6 @@ function playerLabel(rec) {
   const first = parts.slice(1).join(' ') || raw;
   const lastArr = rec.fields[F.lastName];
   const last = Array.isArray(lastArr) ? lastArr[0] : (lastArr || '');
-  // Avoid doubling if first already contains the last name
   if (last && !first.toLowerCase().includes(last.toLowerCase())) {
     return `${first} ${last}`;
   }
@@ -710,7 +759,6 @@ function renderGrid(records) {
     return;
   }
 
-  // Sort: present first (alpha), absent last (alpha)
   const sorted = [...records].sort((a, b) => {
     const aOut = !!a.fields[F.absent], bOut = !!b.fields[F.absent];
     if (aOut !== bOut) return aOut ? 1 : -1;
@@ -788,7 +836,6 @@ async function savePosition(pos) {
   const fieldId = QF[editQ];
   const prev    = editRec.fields[fieldId] || null;
 
-  // Optimistic update
   if (pos) editRec.fields[fieldId] = pos;
   else     delete editRec.fields[fieldId];
   renderGrid(roundGroups[activeRound] || []);
@@ -800,8 +847,7 @@ async function savePosition(pos) {
     });
     toast('Saved');
   } catch (err) {
-    // Revert
-    if (prev) editRec.fields[fieldId] = { name: prev };
+    if (prev) editRec.fields[fieldId] = prev;
     else delete editRec.fields[fieldId];
     renderGrid(roundGroups[activeRound] || []);
     toast('Save failed - check connection', true);
@@ -818,7 +864,6 @@ function openPlrSheet(recId) {
   const notes   = plrRec.fields[F.notes] || '';
 
   document.getElementById('pl-name').textContent = playerLabel(plrRec);
-
   document.getElementById('pl-notes').value = notes;
 
   const actions = document.getElementById('pl-actions');
@@ -895,7 +940,6 @@ async function clearAllQuarters() {
     toast('Positions cleared');
   } catch (err) {
     toast('Save failed', true);
-    console.error(err);
   }
   plrRec = null;
 }
@@ -905,7 +949,7 @@ function saveNotes(val) {
   if (!plrRec) return;
   const recId = plrRec.id;
   plrRec.fields[F.notes] = val;
-  renderGrid(roundGroups[activeRound] || []); // refresh note dot
+  renderGrid(roundGroups[activeRound] || []);
 
   clearTimeout(notesSaveTimer);
   notesSaveTimer = setTimeout(async () => {
@@ -932,11 +976,57 @@ function toast(msg, err = false) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
+function isoDate(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, '0'),
+    String(d.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function fmtLongDate(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function fmtTime(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  let h = d.getHours();
+  const m    = String(d.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${h}:${m}${ampm}`;
+}
+
 function fmtDate(str) {
   if (!str) return '';
   return new Date(str).toLocaleDateString('en-AU', {
     weekday: 'short', day: 'numeric', month: 'short',
   });
+}
+
+function homeAwayLabel(ha) {
+  if (!ha) return '';
+  const lower = ha.toLowerCase();
+  if (lower.includes('home')) return 'Home Game';
+  if (lower.includes('away')) return 'Away Game';
+  return ha;
+}
+
+function vsString(rival, homeAway) {
+  const isAway = (homeAway || '').toLowerCase().includes('away');
+  return isAway ? `${rival} VS ${TEAM_NAME}` : `${TEAM_NAME} VS ${rival}`;
+}
+
+function resolveParticipants(ids) {
+  if (!ids || !ids.length) return '';
+  return ids.map(id => participantsMap[id] || id).filter(Boolean).join(', ');
 }
 
 function esc(s) {
