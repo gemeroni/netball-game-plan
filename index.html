@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#1a3a5c">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>Kiwales Emerald Game Board</title>
+  <title>Netball Game Planner</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -111,6 +111,39 @@
       transition: opacity 0.15s;
     }
     .auto-btn:active { opacity: 0.75; }
+    .clear-btn {
+      background: rgba(255,255,255,0.14);
+      border: 1px solid rgba(255,255,255,0.22);
+      color: rgba(255,255,255,0.85);
+      height: 32px; padding: 0 11px;
+      border-radius: 8px;
+      font-size: 12px; font-weight: 800;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .clear-btn:active { opacity: 0.65; }
+    .alloc-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 6px;
+    }
+    .alloc-label { font-size: 11px; color: rgba(255,255,255,0.45); font-weight: 600; letter-spacing: 0.04em; }
+    .alloc-toggle { display: flex; background: rgba(255,255,255,0.1); border-radius: 7px; overflow: hidden; }
+    .alloc-opt {
+      padding: 4px 10px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      border: none; background: none; color: rgba(255,255,255,0.5);
+      cursor: pointer; transition: all 0.15s;
+    }
+    .alloc-opt.active { background: var(--gold); color: var(--navy-dark); }
+    .contra-label {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      color: rgba(255,255,255,0.5); cursor: pointer;
+      border-left: 1px solid rgba(255,255,255,0.15);
+      padding-left: 10px; margin-left: 2px;
+    }
+    .contra-label input[type=checkbox] { accent-color: var(--gold); width: 13px; height: 13px; cursor: pointer; }
     .settings-btn {
       background: rgba(255,255,255,0.12);
       border: none; color: white;
@@ -119,6 +152,36 @@
       font-size: 16px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
     }
+    .help-sheet {
+      width: 100%;
+      background: white;
+      border-radius: 22px 22px 0 0;
+      padding: 0 20px max(env(safe-area-inset-bottom), 32px);
+      animation: slideUp 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+      max-height: 88vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    .help-sheet h2 { font-size: 16px; font-weight: 900; color: var(--navy); margin: 18px 0 14px; }
+    .help-sheet h3 { font-size: 13px; font-weight: 800; color: var(--navy); margin: 14px 0 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .help-sheet p, .help-sheet li { font-size: 13px; color: #374151; line-height: 1.55; margin: 0 0 6px; }
+    .help-sheet ul { margin: 0 0 8px; padding-left: 18px; }
+    .help-sheet .help-tag {
+      display: inline-block; font-size: 11px; font-weight: 800;
+      padding: 2px 7px; border-radius: 5px; margin-right: 4px; vertical-align: middle;
+    }
+    .help-sheet .help-divider { border: none; border-top: 1px solid #e5e7eb; margin: 14px 0; }
+    .help-sheet .close-btn {
+      display: block; width: 100%; margin-top: 18px;
+      padding: 13px; background: var(--navy); color: white;
+      border: none; border-radius: 12px; font-size: 14px; font-weight: 800; cursor: pointer;
+    }
+    .dont-show-label {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      margin-top: 12px; margin-bottom: 4px;
+      font-size: 12px; color: #9ca3af; cursor: pointer;
+    }
+    .dont-show-label input[type=checkbox] { accent-color: var(--navy); cursor: pointer; }
 
     .round-row { display: flex; align-items: center; gap: 10px; }
     .round-select {
@@ -511,7 +574,9 @@
     <div class="header-row1">
       <div class="brand">Kiwales Emerald</div>
       <div class="header-actions">
+        <button class="clear-btn" onclick="confirmClearQuarter()" title="Clear active quarter assignments">CLEAR</button>
         <button class="auto-btn" onclick="applyAutoAllocate()" title="Auto-allocate positions across the season">AUTO</button>
+        <button class="settings-btn" onclick="showHelp()" title="Guide" style="font-size:14px;font-weight:900;border-radius:50%">ⓘ</button>
         <button class="settings-btn" onclick="showDisconnect()" title="Settings">⚙</button>
       </div>
     </div>
@@ -522,6 +587,17 @@
     </div>
     <div class="round-meta" id="round-meta"></div>
     <div class="round-duty" id="round-duty"></div>
+    <div class="alloc-row">
+      <span class="alloc-label">AUTO MODE</span>
+      <div class="alloc-toggle">
+        <button class="alloc-opt active" id="alloc-quarter" onclick="setAllocMode('quarter')">QUARTER</button>
+        <button class="alloc-opt" id="alloc-half" onclick="setAllocMode('half')">HALF</button>
+      </div>
+      <label class="contra-label" id="contra-label">
+        <input type="checkbox" id="contra-check" onchange="contraMode = this.checked">
+        <span>Contra-logic</span>
+      </label>
+    </div>
   </div>
 
   <div class="grid-wrap">
@@ -551,6 +627,50 @@
     <button class="q-tab" id="qtab-Q4" onclick="openBucketQ('Q4')">Q4</button>
   </div>
   <div class="bucket-cards" id="bucket-cards"></div>
+</div>
+
+<!-- ── Help guide ────────────────────────────────────────────── -->
+<div class="overlay" id="help-overlay" onclick="closeHelp(event)">
+  <div class="help-sheet" id="help-sheet">
+    <div class="sheet-handle"></div>
+    <h2>Netball Game Planner - Guide</h2>
+
+    <h3>Selecting a round</h3>
+    <p>Use the dropdown at the top to switch between scheduled games. The meta line shows set, round, matchup, date and time. Rostered duty info beneath.</p>
+
+    <hr class="help-divider">
+    <h3>Assigning positions manually</h3>
+    <p>Tap a quarter column header (Q1-Q4) to open the position bucket at the bottom. The bucket shows only unassigned positions for that quarter. Tap a position card to select it (it lifts), then tap a player row to assign it. Tap the position card again to deselect.</p>
+    <p>You can also tap directly on any cell in the grid to open the position picker for that player and quarter.</p>
+
+    <hr class="help-divider">
+    <h3>Auto-allocate</h3>
+    <p>Tap <strong>AUTO</strong> to fill all empty slots. The algorithm balances positions across the whole season - players who have played a position least often get priority. Any positions you've pre-filled are left as-is.</p>
+    <ul>
+      <li><strong>QUARTER mode</strong> - each quarter is solved independently. Best for maximum rotation.</li>
+      <li><strong>HALF mode</strong> - positions stay the same across each half (Q1=Q2, Q3=Q4 roughly). Only the sub player swaps mid-half. Good for players who need time to settle into a position.</li>
+      <li><strong>Contra-logic</strong> (checkbox, HALF only) - with 8 players there is one Sub per quarter. The player who is Sub in the first quarter of a half plays WD in the second quarter. The player who played WD in the first quarter takes Sub. Every player gets court time in at least 3 of 4 quarters.</li>
+    </ul>
+    <p>In all modes, no player will sub more than once per game.</p>
+
+    <hr class="help-divider">
+    <h3>Clearing assignments</h3>
+    <p>Tap a quarter tab (Q1-Q4) at the bottom to select it, then tap <strong>CLEAR</strong> to wipe all assignments for that quarter. No confirmation - it saves immediately.</p>
+
+    <hr class="help-divider">
+    <h3>Absences</h3>
+    <p>Tick the checkbox next to a player's name to mark them absent. Their positions are automatically redistributed - to the fill-in player if available, or to Sub players. If 6 or fewer players remain active, WD is removed from the rotation and positions are recalculated.</p>
+
+    <hr class="help-divider">
+    <h3>Player notes</h3>
+    <p>Tap a player's name to open their options panel. You can add a note (e.g. "limit to sub - ankle") that is visible to you as coach context.</p>
+
+    <button class="close-btn" onclick="closeHelp()">Got it</button>
+    <label class="dont-show-label">
+      <input type="checkbox" id="dont-show-guide" onchange="localStorage.setItem('hideGuide', this.checked ? '1' : '')">
+      <span>Don't show this again</span>
+    </label>
+  </div>
 </div>
 
 <!-- ── Bottom Sheet (position picker) ────────────────────────── -->
@@ -638,6 +758,9 @@ let editQ           = null;
 let plrRec          = null;
 let activeBucketQ   = null;
 let pickedPosition  = null;
+let allocMode       = 'quarter';
+let contraMode      = false;
+let autoAssigned    = []; // { rec, fieldId } - tracks slots set by last AUTO run
 
 // ─── Auth ───────────────────────────────────────────────────────
 function saveToken() {
@@ -749,6 +872,7 @@ async function loadAll() {
     buildGroups();
     populateSelector();
     autoSelectRound();
+    maybeShowGuide();
   } catch (e) {
     const msg = e.message.includes('401') ? 'Invalid token - check your Airtable Personal Access Token.' : `Load failed: ${e.message}`;
     showError(msg);
@@ -815,6 +939,7 @@ function autoSelectRound() {
 
 function onRoundChange(roundName) {
   activeRound = roundName;
+  autoAssigned = [];
   const info = scheduleMap[roundName] || {};
 
   // Meta line: SET 3 · Round 01 · Kiwales Emerald VS Warriors Pandas · Friday 1 May 2026 · 4:30pm
@@ -827,14 +952,11 @@ function onRoundChange(roundName) {
   document.getElementById('round-meta').textContent = metaParts.join(' · ');
 
   // Duty line
-  const dutyParts = [];
-  if (info.teamDuty) {
-    const fam = resolveParticipants(info.dutyFamilyIds);
-    dutyParts.push(`${info.teamDuty} Duty${fam ? `: ${fam}` : ''}`);
-  }
-  const fruit = resolveParticipants(info.fruitFamilyIds);
-  if (fruit) dutyParts.push(`Fruit Duty: ${fruit}`);
-  document.getElementById('round-duty').textContent = dutyParts.join(' · ');
+  const dutyFam   = resolveParticipants(info.dutyFamilyIds)  || 'TBC';
+  const fruitFam  = resolveParticipants(info.fruitFamilyIds) || 'TBC';
+  const dutyLabel = info.teamDuty ? `${info.teamDuty} Duty` : 'Game Duty (Timing/Scoring)';
+  document.getElementById('round-duty').textContent =
+    `${dutyLabel}: ${dutyFam} · Fruit Duty: ${fruitFam}`;
 
   pickedPosition = null;
   updatePickMode();
@@ -1297,48 +1419,129 @@ function computeAutoAllocate(excludePos = []) {
   const changes  = [];
   const courtPos = POSITIONS.filter(p => p !== 'Sub' && !excludePos.includes(p));
 
-  for (const [, fieldId] of Object.entries(QF)) {
-    const locked      = new Set(); // recIds already assigned this quarter
-    const usedPos     = new Set(); // positions already taken this quarter
+  // Count sub assignments already in place across all quarters
+  const subCount = Object.fromEntries(recs.map(r => [r.id, 0]));
+  for (const rec of recs) {
+    for (const fid of Object.values(QF)) {
+      if (rec.fields[fid] === 'Sub') subCount[rec.id]++;
+    }
+  }
 
+  // Within-game position usage for variety penalty (×5)
+  const inGameCount = {};
+  for (const rec of recs) {
+    inGameCount[rec.id] = {};
+    for (const fid of Object.values(QF)) {
+      const pos = rec.fields[fid];
+      if (pos && pos !== 'Sub') inGameCount[rec.id][pos] = (inGameCount[rec.id][pos] || 0) + 1;
+    }
+  }
+
+  const score = (rec, pos) => {
+    const pid = (rec.fields[F.player] || [])[0];
+    return (pid ? (history[pid]?.[pos] || 0) : 0) + (inGameCount[rec.id]?.[pos] || 0) * 5;
+  };
+
+  // Assign one quarter. Returns the recId that got Sub this quarter (or null).
+  const solveQuarter = (fieldId) => {
+    const locked  = new Set();
+    const usedPos = new Set();
     for (const rec of recs) {
       const pos = rec.fields[fieldId];
       if (pos) { locked.add(rec.id); usedPos.add(pos); }
     }
-
     const freePlayers  = recs.filter(r => !locked.has(r.id));
     const freeCourtPos = courtPos.filter(p => !usedPos.has(p));
-    if (!freePlayers.length) continue;
+    if (!freePlayers.length) return null;
 
-    // Score: times player has already played this position (lower = assign first)
-    const score = (rec, pos) => {
-      const pid = (rec.fields[F.player] || [])[0];
-      return pid ? (history[pid]?.[pos] || 0) : 0;
-    };
-
-    // Build all candidate pairs, sort by score (ascending)
-    const pairs = [];
-    for (const pos of freeCourtPos) {
-      for (const rec of freePlayers) {
-        pairs.push({ pos, rec, s: score(rec, pos) });
-      }
-    }
-    pairs.sort((a, b) => a.s - b.s || playerLabel(a.rec).localeCompare(playerLabel(b.rec)));
-
+    const subLocked = freePlayers.filter(r => subCount[r.id] >= 1);
+    const subFree   = freePlayers.filter(r => subCount[r.id] < 1);
     const assignedPlayers = new Set();
     const assignedPos     = new Set();
 
-    for (const { pos, rec } of pairs) {
-      if (assignedPlayers.has(rec.id) || assignedPos.has(pos)) continue;
-      assignedPlayers.add(rec.id);
-      assignedPos.add(pos);
-      changes.push({ rec, fieldId, pos });
-    }
+    const assignBest = (candidates, posPool) => {
+      const pairs = [];
+      for (const pos of posPool) for (const rec of candidates) pairs.push({ pos, rec, s: score(rec, pos) });
+      pairs.sort((a, b) => a.s - b.s || playerLabel(a.rec).localeCompare(playerLabel(b.rec)));
+      for (const { pos, rec } of pairs) {
+        if (assignedPlayers.has(rec.id) || assignedPos.has(pos)) continue;
+        assignedPlayers.add(rec.id); assignedPos.add(pos);
+        changes.push({ rec, fieldId, pos });
+        inGameCount[rec.id][pos] = (inGameCount[rec.id][pos] || 0) + 1;
+      }
+    };
 
-    // Remaining players get Sub
+    assignBest(subLocked, freeCourtPos);
+    assignBest(subFree, freeCourtPos.filter(p => !assignedPos.has(p)));
+
+    let newSubId = null;
     for (const rec of freePlayers) {
-      if (!assignedPlayers.has(rec.id)) changes.push({ rec, fieldId, pos: 'Sub' });
+      if (!assignedPlayers.has(rec.id)) {
+        changes.push({ rec, fieldId, pos: 'Sub' });
+        subCount[rec.id]++;
+        newSubId = rec.id;
+      }
     }
+    return newSubId;
+  };
+
+  if (allocMode === 'half') {
+    // Each half: solve the first quarter, then build the second quarter as a position-swap.
+    // 6 players keep identical positions across the half; only 2 swap roles.
+    // Contra-logic (checkbox): sub player always takes WD in the second quarter,
+    //   and the WD player takes Sub (opposing positions strategy).
+    // Without contra: sub player takes the outgoing-sub's court position (history-balanced).
+    for (const [firstFid, secondFid] of [[QF.Q1, QF.Q2], [QF.Q3, QF.Q4]]) {
+      const firstSubId = solveQuarter(firstFid);
+
+      // Snapshot all firstFid assignments (pre-existing + just solved)
+      const firstAssign = {};
+      for (const rec of recs) if (rec.fields[firstFid]) firstAssign[rec.id] = rec.fields[firstFid];
+      for (const c of changes.filter(c => c.fieldId === firstFid)) firstAssign[c.rec.id] = c.pos;
+
+      let secondSubRec = null;
+      let firstSubQ2Pos = null; // what the Q1-sub plays in Q2
+
+      if (contraMode) {
+        // Q1-sub takes WD in Q2; whoever played WD in Q1 takes Sub in Q2
+        const wdId = Object.entries(firstAssign).find(([, p]) => p === 'WD')?.[0];
+        secondSubRec = wdId ? recs.find(r => r.id === wdId && !r.fields[secondFid] && subCount[r.id] < 1) : null;
+        firstSubQ2Pos = secondSubRec ? 'WD' : null; // fall back below if WD unavailable
+      }
+
+      if (!secondSubRec) {
+        // HALF mode (or CONTRA fallback): pick player with fewest historical subs
+        const candidates = recs
+          .filter(r => r.id !== firstSubId && subCount[r.id] < 1 && !r.fields[secondFid])
+          .sort((a, b) => {
+            const pa = (a.fields[F.player] || [])[0];
+            const pb = (b.fields[F.player] || [])[0];
+            return (history[pa]?.Sub || 0) - (history[pb]?.Sub || 0);
+          });
+        secondSubRec = candidates[0] || null;
+        firstSubQ2Pos = secondSubRec ? firstAssign[secondSubRec.id] : null;
+      }
+
+      // Build secondFid: copy firstFid with the swap applied
+      for (const rec of recs) {
+        if (rec.fields[secondFid]) continue;
+        let pos;
+        if (secondSubRec && rec.id === secondSubRec.id) {
+          pos = 'Sub';
+          subCount[rec.id]++;
+        } else if (firstSubId && rec.id === firstSubId) {
+          pos = firstSubQ2Pos;
+        } else {
+          pos = firstAssign[rec.id] || null;
+        }
+        if (pos) {
+          changes.push({ rec, fieldId: secondFid, pos });
+          if (pos !== 'Sub') inGameCount[rec.id][pos] = (inGameCount[rec.id][pos] || 0) + 1;
+        }
+      }
+    }
+  } else {
+    for (const [, fieldId] of Object.entries(QF)) solveQuarter(fieldId);
   }
 
   return changes;
@@ -1347,6 +1550,9 @@ function computeAutoAllocate(excludePos = []) {
 async function applyAutoAllocate() {
   const changes = computeAutoAllocate();
   if (!changes.length) { toast('All positions already filled'); return; }
+
+  // Record what AUTO assigned so a mode switch can reshuffle only these slots
+  autoAssigned = changes.map(({ rec, fieldId }) => ({ rec, fieldId }));
 
   // Optimistic update
   for (const { rec, fieldId, pos } of changes) rec.fields[fieldId] = pos;
@@ -1367,6 +1573,59 @@ async function applyAutoAllocate() {
     toast(`${changes.length} position${changes.length > 1 ? 's' : ''} auto-allocated`);
   } catch (err) {
     toast('Auto-allocate save failed', true);
+    console.error(err);
+  }
+}
+
+// ─── Help ────────────────────────────────────────────────────────
+function showHelp() {
+  const cb = document.getElementById('dont-show-guide');
+  if (cb) cb.checked = localStorage.getItem('hideGuide') === '1';
+  document.getElementById('help-overlay').classList.add('active');
+}
+function closeHelp(e) {
+  if (e && e.target !== document.getElementById('help-overlay')) return;
+  document.getElementById('help-overlay').classList.remove('active');
+}
+function maybeShowGuide() {
+  if (localStorage.getItem('hideGuide') !== '1') showHelp();
+}
+
+// ─── Alloc mode ──────────────────────────────────────────────────
+function setAllocMode(mode) {
+  if (allocMode === mode) return;
+  allocMode = mode;
+  document.getElementById('alloc-quarter').classList.toggle('active', mode === 'quarter');
+  document.getElementById('alloc-half').classList.toggle('active', mode === 'half');
+
+  // If AUTO was previously run, clear only its slots and reshuffle under the new mode
+  if (autoAssigned.length) {
+    for (const { rec, fieldId } of autoAssigned) delete rec.fields[fieldId];
+    autoAssigned = [];
+    applyAutoAllocate();
+  }
+}
+
+// ─── Clear quarter ───────────────────────────────────────────────
+async function confirmClearQuarter() {
+  if (!activeRound) return;
+  if (!activeBucketQ) { toast('Select a quarter first'); return; }
+  const recs    = roundGroups[activeRound] || [];
+  const fieldId = QF[activeBucketQ];
+  if (!recs.some(r => r.fields[fieldId])) { toast(`${activeBucketQ} already empty`); return; }
+
+  autoAssigned = autoAssigned.filter(a => a.fieldId !== fieldId);
+  for (const rec of recs) delete rec.fields[fieldId];
+  renderGrid(recs);
+  refreshBucket();
+
+  try {
+    await Promise.all(recs.map(rec =>
+      apiFetch(G_TABLE, `/${rec.id}`, { method: 'PATCH', body: JSON.stringify({ fields: { [fieldId]: null } }) })
+    ));
+    toast(`${activeBucketQ} cleared`);
+  } catch (err) {
+    toast('Clear failed - reload to resync', true);
     console.error(err);
   }
 }
