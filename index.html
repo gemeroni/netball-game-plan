@@ -196,7 +196,7 @@
     .round-select option { background: var(--navy-dark); }
 
     .round-meta {
-      font-size: 13px;
+      font-size: 14px;
       color: rgba(255,255,255,0.75);
       margin-top: 4px;
       min-height: 15px;
@@ -204,8 +204,8 @@
     }
 
     .round-duty {
-      font-size: 11px;
-      color: rgba(255,255,255,0.45);
+      font-size: 13px;
+      color: rgba(255,255,255,0.55);
       margin-top: 2px;
       min-height: 12px;
     }
@@ -403,16 +403,19 @@
     .pos-opt-Sub { background: var(--sub-bg); color: var(--sub); border-color: transparent; }
 
     .absent-chk {
-      width: 22px; height: 22px; flex-shrink: 0;
-      border: 2px solid var(--border); border-radius: 5px;
+      height: 22px; flex-shrink: 0;
+      border: 1.5px solid var(--border); border-radius: 5px;
       background: none; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 900; color: transparent;
+      display: flex; align-items: center;
+      padding: 0 6px;
+      font-size: 10px; font-weight: 700; color: var(--muted);
+      letter-spacing: 0.02em;
       transition: all 0.15s;
     }
     .absent-chk.checked {
       background: #fee2e2; border-color: #dc2626; color: #dc2626;
     }
+    .absent-chk.checked::before { content: '✕ '; }
 
     .btn-clear-pos {
       width: 100%; padding: 13px;
@@ -1031,7 +1034,7 @@ function renderGrid(records) {
       <td class="td-name">
         <div style="display:flex;align-items:center;gap:7px">
           <button class="absent-chk${absent ? ' checked' : ''}"
-            onclick="quickToggleAbsent('${rec.id}')" title="${absent ? 'Mark present' : 'Mark absent'}">✕</button>
+            onclick="quickToggleAbsent('${rec.id}')" title="${absent ? 'Mark present' : 'Mark absent'}">Absent</button>
           <button class="player-name-btn" onclick="openPlrSheet('${rec.id}')">
             ${esc(name)}
             ${hasNote ? `<span class="note-dot" title="Has notes"></span>` : ''}
@@ -1270,10 +1273,13 @@ function isFillIn(rec) {
   return /fill.?in/i.test(rec.fields[F.playerRound] || '');
 }
 
-// Fill-in players are absent by default (field unchecked = absent, checked = available).
-// Regular players are present by default (field unchecked = present, checked = absent).
+// Fill-in availability is tracked in localStorage (avoids Airtable field ambiguity).
+// Regular players use F.absent as a "Present" checkbox: true = present, null = absent.
+function fillInAvailKey(rec) { return `kw_avail_${rec.id}`; }
 function isAbsent(rec) {
-  return isFillIn(rec) ? !rec.fields[F.absent] : !!rec.fields[F.absent];
+  return isFillIn(rec)
+    ? !localStorage.getItem(fillInAvailKey(rec))
+    : !rec.fields[F.absent];
 }
 
 function activeCount() {
@@ -1356,9 +1362,20 @@ async function cascadeAbsence(rec) {
 }
 
 async function toggleAbsentRec(rec, makeAbsent) {
-  // Fill-in: field true = available (present), null = absent by default.
-  // Regular: field true = absent, null = present by default.
-  const fieldValue = isFillIn(rec) ? (makeAbsent ? null : true) : (makeAbsent ? true : null);
+  if (isFillIn(rec)) {
+    if (makeAbsent) localStorage.removeItem(fillInAvailKey(rec));
+    else localStorage.setItem(fillInAvailKey(rec), '1');
+    renderGrid(roundGroups[activeRound] || []);
+    if (makeAbsent) {
+      toast('Marked absent - reassigning positions...');
+      await cascadeAbsence(rec);
+      toast('Marked absent - positions reassigned');
+    } else {
+      toast('Marked available');
+    }
+    return;
+  }
+  const fieldValue = makeAbsent ? null : true;
   rec.fields[F.absent] = fieldValue;
   renderGrid(roundGroups[activeRound] || []);
   try {
