@@ -1676,7 +1676,14 @@ const POS_STYLE = {
 
 async function captureShare() {
   if (!activeRound) { toast('No round selected'); return; }
-  const recs = (roundGroups[activeRound] || []).filter(r => !isAbsent(r));
+  const capSurname = r => { const l = r.fields[F.lastName]; return (Array.isArray(l) ? l[0] : l) || playerLabel(r); };
+  const recs = (roundGroups[activeRound] || [])
+    .filter(r => !isAbsent(r))
+    .sort((a, b) => {
+      const aFill = isFillIn(a) ? 1 : 0, bFill = isFillIn(b) ? 1 : 0;
+      if (aFill !== bFill) return aFill - bFill;
+      return capSurname(a).localeCompare(capSurname(b)) || playerLabel(a).localeCompare(playerLabel(b));
+    });
   const info = scheduleMap[activeRound] || {};
 
   const vs   = vsString(info.rival || '?', info.homeAway);
