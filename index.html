@@ -90,16 +90,16 @@
     /* ── Header ─────────────────────────────────────────────── */
     .header {
       background: var(--navy);
-      padding: 12px 16px 10px;
+      padding: 10px 16px 8px;
       flex-shrink: 0;
     }
     .header-row1 {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 10px;
+      margin-bottom: 7px;
     }
-    .brand { color: var(--gold); font-size: 17px; font-weight: 900; letter-spacing: -0.3px; }
+    .brand { color: var(--gold); font-size: 16px; font-weight: 900; letter-spacing: -0.3px; }
     .header-actions { display: flex; align-items: center; gap: 7px; }
     .auto-btn {
       background: var(--gold);
@@ -126,7 +126,7 @@
     .clear-btn:active { opacity: 0.65; }
     .alloc-row {
       display: flex; align-items: center; gap: 8px;
-      margin-top: 6px;
+      margin-top: 5px;
     }
     .alloc-label { font-size: 11px; color: rgba(255,255,255,0.45); font-weight: 600; letter-spacing: 0.04em; }
     .alloc-toggle { display: flex; background: rgba(255,255,255,0.1); border-radius: 7px; overflow: hidden; }
@@ -196,18 +196,18 @@
     .round-select option { background: var(--navy-dark); }
 
     .round-meta {
-      font-size: 14px;
+      font-size: 13px;
       color: rgba(255,255,255,0.75);
-      margin-top: 6px;
-      min-height: 17px;
+      margin-top: 4px;
+      min-height: 15px;
       font-weight: 500;
     }
 
     .round-duty {
       font-size: 11px;
       color: rgba(255,255,255,0.45);
-      margin-top: 3px;
-      min-height: 13px;
+      margin-top: 2px;
+      min-height: 12px;
     }
 
     /* ── Grid ───────────────────────────────────────────────── */
@@ -215,7 +215,7 @@
       flex: 1;
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
-      padding: 12px 12px calc(120px + env(safe-area-inset-bottom));
+      padding: 8px 12px calc(120px + env(safe-area-inset-bottom));
     }
 
     .grid {
@@ -235,7 +235,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      padding: 10px 6px;
+      padding: 7px 6px;
       text-align: center;
     }
     .grid thead th:first-child { text-align: left; padding-left: 14px; width: 30%; }
@@ -249,12 +249,12 @@
     .grid tbody tr.is-absent { background: repeating-linear-gradient(135deg, transparent, transparent 6px, rgba(0,0,0,0.018) 6px, rgba(0,0,0,0.018) 12px); }
 
     .grid tbody td {
-      padding: 9px 5px;
+      padding: 6px 5px;
       text-align: center;
       vertical-align: middle;
     }
     .grid tbody td.td-name {
-      padding: 9px 10px 9px 14px;
+      padding: 6px 10px 6px 14px;
       text-align: left;
     }
 
@@ -587,7 +587,7 @@
       <div class="brand">Kiwales Emerald</div>
       <div class="header-actions">
         <button class="settings-btn" onclick="captureShare()" title="Share game plan" style="font-size:15px">⤴</button>
-        <button class="clear-btn" onclick="confirmClearQuarter()" title="Clear active quarter assignments">CLEAR</button>
+        <button class="clear-btn" id="clear-btn" onclick="confirmClearQuarter()" title="Clear assignments">CLEAR ALL</button>
         <button class="auto-btn" onclick="applyAutoAllocate()" title="Auto-allocate positions across the season">AUTO</button>
         <button class="settings-btn" onclick="showHelp()" title="Guide" style="font-size:14px;font-weight:900;border-radius:50%">ⓘ</button>
         <button class="settings-btn" onclick="showDisconnect()" title="Settings">⚙</button>
@@ -946,8 +946,10 @@ function autoSelectRound() {
 }
 
 function onRoundChange(roundName) {
-  activeRound = roundName;
-  autoAssigned = [];
+  activeRound   = roundName;
+  autoAssigned  = [];
+  activeBucketQ = null;
+  updateClearLabel();
   const info = scheduleMap[roundName] || {};
 
   // Meta line: SET 3 · Round 01 · Kiwales Emerald VS Warriors Pandas · Friday 1 May 2026 · 4:30pm
@@ -1062,6 +1064,12 @@ function openBucketQ(q) {
   updateQTabs();
   refreshBucket();
   updatePickMode();
+  updateClearLabel();
+}
+
+function updateClearLabel() {
+  const btn = document.getElementById('clear-btn');
+  if (btn) btn.textContent = activeBucketQ ? `CLEAR ${activeBucketQ}` : 'CLEAR ALL';
 }
 
 function updateQTabs() {
@@ -1726,7 +1734,7 @@ function setAllocMode(mode) {
 // ─── Clear quarter ───────────────────────────────────────────────
 async function confirmClearQuarter() {
   if (!activeRound) return;
-  if (!activeBucketQ) { toast('Select a quarter first'); return; }
+  if (!activeBucketQ) { return clearAll(); }
   const recs    = roundGroups[activeRound] || [];
   const fieldId = QF[activeBucketQ];
   if (!recs.some(r => r.fields[fieldId])) { toast(`${activeBucketQ} already empty`); return; }
@@ -1741,6 +1749,29 @@ async function confirmClearQuarter() {
       apiFetch(G_TABLE, `/${rec.id}`, { method: 'PATCH', body: JSON.stringify({ fields: { [fieldId]: null } }) })
     ));
     toast(`${activeBucketQ} cleared`);
+  } catch (err) {
+    toast('Clear failed - reload to resync', true);
+    console.error(err);
+  }
+}
+
+async function clearAll() {
+  if (!activeRound) return;
+  const recs = roundGroups[activeRound] || [];
+  const hasAny = recs.some(r => Object.values(QF).some(fid => r.fields[fid]));
+  if (!hasAny) { toast('Nothing to clear'); return; }
+
+  autoAssigned = [];
+  const clearFields = Object.fromEntries(Object.values(QF).map(fid => [fid, null]));
+  for (const rec of recs) Object.values(QF).forEach(fid => delete rec.fields[fid]);
+  renderGrid(recs);
+  refreshBucket();
+
+  try {
+    await Promise.all(recs.map(rec =>
+      apiFetch(G_TABLE, `/${rec.id}`, { method: 'PATCH', body: JSON.stringify({ fields: clearFields }) })
+    ));
+    toast('All quarters cleared');
   } catch (err) {
     toast('Clear failed - reload to resync', true);
     console.error(err);
