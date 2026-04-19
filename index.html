@@ -547,7 +547,7 @@
     }
     .cc { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #fff; border-radius: 16px; overflow: hidden; width: 380px; }
     .cc-header { background: linear-gradient(135deg, #057a55 0%, #064e3b 100%); padding: 16px 18px 14px; }
-    .cc-team { color: #f0b429; font-size: 20px; font-weight: 900; letter-spacing: -0.3px; margin-bottom: 5px; }
+    .cc-team { color: #f0b429; font-size: 20px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 5px; }
     .cc-round { color: rgba(255,255,255,0.95); font-size: 14px; font-weight: 700; margin-bottom: 3px; }
     .cc-meta { color: rgba(255,255,255,0.55); font-size: 12px; }
     .cc-grid { padding: 10px 14px 14px; }
@@ -1691,7 +1691,7 @@ async function captureShare() {
   const vs   = vsString(info.rival || '?', info.homeAway);
   const date = info.date ? fmtLongDate(info.date) : '';
   const time = info.date ? fmtTime(info.date)     : '';
-  const meta = [info.court ? `Court ${info.court}` : '', info.homeAway ? `${info.homeAway} Game` : ''].filter(Boolean).join(' · ');
+  const meta = [info.court || '', info.homeAway ? `${info.homeAway} Game` : ''].filter(Boolean).join(' · ');
 
   const pillHtml = (pos) => {
     if (!pos) return '<span style="color:#d1d5db;font-size:11px">—</span>';
